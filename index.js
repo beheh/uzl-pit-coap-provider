@@ -98,7 +98,7 @@ server.on('request', function(req, res) {
 server.listen(argv.p, function() {
     console.log('CoAP server listening on port ' + argv.p);
     if (!argv.r) {
-        console.log('No registry specified, skipping registration');
+        console.log('No registry specified, skipping registration (use --help)');
         return;
     }
 
