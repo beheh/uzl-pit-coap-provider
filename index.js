@@ -81,20 +81,33 @@ server.on('request', function(req, res) {
 });
 
 server.listen(function() {
-  var req = coap.request({
-	hostname: '141.83.151.196',
-	method: 'POST',
-	pathname: '/registry'
-  });
+	var args = process.argv.slice(2);
+	if(args.length < 1) {
+		console.log('no SSP specified, skipping registration');
+		return;
+	}
+	var sspIP = args[0];
+	
+	var req = coap.request({
+		host: sspIP,
+		method: 'POST',
+		pathname: '/registry'
+	});
+	console.log('registering at "coap://'+req.url.host+'/registry"');
+
+	req.on('response', function(res) {
+		res.pipe(process.stdout)
+		res.on('end', function() {
+			process.exit(0)
+		})
+	})
+	req.on('error', function(err) {
+		console.log('error: registration failed');
+		console.log(err);
+		process.exit(0)
+	});
  
-  req.on('response', function(res) {
-    res.pipe(process.stdout)
-    res.on('end', function() {
-      process.exit(0)
-    })
-  })
- 
-  req.end()
+	req.end()
 })
 
 function buildDeviceRDF(res) {
