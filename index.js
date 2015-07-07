@@ -33,7 +33,8 @@ coap.registerFormat('text/n3', 203);
 // RDF prefixes
 var prefixes = {
     'xsd': 'http://www.w3.org/2001/XMLSchema#',
-    'itm': 'http://itm.uni-luebeck.de/'
+    'pit': 'http://pit.itm.uni-luebeck.de/'
+    'grp5': 'http://group5.pit.itm.uni-luebeck.de/'
 };
 
 // index route
@@ -46,8 +47,8 @@ router.addRoute('/.well-known/core', new CoapHandler(function(req, res) {
     }
     res.setOption('Content-Format', 'application/link-format'); // as defined in RFC 6690
     res.write([
-        '</device>;ct=202;rt="http://itm.uni-luebeck.de/device05"',
-        '</temperature>;obs;ct=202;rt="http://itm.uni-luebeck.de/groups/5/sensors/temperature"' // temperature is observable
+        '</device>;ct=202;rt="grp5:device1"',
+        '</temperature>;obs;ct=202;rt="grp5:sensors/temperature"' // temperature is observable
     ].join(','));
     res.end();
 }).handle);
@@ -131,28 +132,28 @@ function buildDeviceRDF(res) {
         prefixes: prefixes
     })
     writer.addTriple({
-        subject: 'itm:device05',
-        predicate: 'itm:hasLabel',
+        subject: 'grp5:device1',
+        predicate: 'pit:hasLabel',
         object: n3.Util.createLiteral('Weather station')
     });
     writer.addTriple({
-        subject: 'itm:device05',
-        predicate: 'itm:hasGroup',
+        subject: 'grp5:device1',
+        predicate: 'pit:hasGroup',
         object: n3.Util.createLiteral('SVA_05-SS15')
     });
     // get IP address
     var ips = require('./ip').getLocalIPs();
     ips.forEach(function(ip) {
         writer.addTriple({
-            subject: 'itm:device05',
-            predicate: 'itm:hasIP',
+            subject: 'grp5:device1',
+            predicate: 'pit:hasIP',
             object: n3.Util.createLiteral(ip)
         });
     });
     writer.addTriple({
-        subject: 'itm:device05',
-        predicate: 'itm:hasSensor',
-        object: 'itm:groups/5/sensors/temperature'
+        subject: 'grp5:device1',
+        predicate: 'pit:hasSensor',
+        object: 'grp5:sensors/temperature'
     });
     writer.end(function(err, rdf) {
         res.write(rdf);
@@ -164,18 +165,18 @@ function buildSensorRDF(res) {
         prefixes: prefixes
     })
     writer.addTriple({
-        subject: 'itm:groups/5/sensors/temperature',
-        predicate: 'itm:lastModified',
+        subject: 'grp5:sensor1',
+        predicate: 'pit:lastModified',
         object: n3.Util.createLiteral(lastModified.toISOString(), 'xsd:dateTime')
     });
     writer.addTriple({
-        subject: 'itm:groups/5/sensors/temperature',
-        predicate: 'itm:hasStatus',
-        object: 'itm:groups/5/sensors/temperatureStatus'
+        subject: 'grp5:sensor1',
+        predicate: 'pit:hasStatus',
+        object: 'grp5:status1'
     });
     writer.addTriple({
-        subject: 'itm:groups/5/sensors/temperatureStatus',
-        predicate: 'itm:hasValue',
+        subject: 'grp5:status1',
+        predicate: 'pit:hasValue',
         object: n3.Util.createLiteral(Math.round(temperature * 10) / 10, 'xsd:float')
     });
     writer.end(function(err, rdf) {
