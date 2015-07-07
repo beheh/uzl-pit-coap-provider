@@ -1,0 +1,18 @@
+{
+  "name": "pit-node-coap",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "coap": "^0.10.3",
+    "n3": "^0.4.3",
+    "routes": "^2.0.0",
+    "url": "^0.10.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
