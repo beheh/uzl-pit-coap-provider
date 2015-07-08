@@ -12,10 +12,9 @@ var argv = require('yargs')
     .argv;
 
 // imports
-var url = require('url'),
+var url = require('url'),  // parsing urls-
     coap = require('coap'),
     server = coap.createServer(),
-    url = require('url'), // parsing urls
     routes = require('routes'), // for routing requests
     router = new routes(),
     n3 = require('n3'), // for building RDF documents
@@ -33,7 +32,7 @@ coap.registerFormat('text/n3', 203);
 // RDF prefixes
 var prefixes = {
     'xsd': 'http://www.w3.org/2001/XMLSchema#',
-    'pit': 'http://pit.itm.uni-luebeck.de/'
+    'pit': 'http://pit.itm.uni-luebeck.de/',
     'grp5': 'http://group5.pit.itm.uni-luebeck.de/'
 };
 
@@ -48,7 +47,7 @@ router.addRoute('/.well-known/core', new CoapHandler(function(req, res) {
     res.setOption('Content-Format', 'application/link-format'); // as defined in RFC 6690
     res.write([
         '</device>;ct=202;rt="grp5:device1"',
-        '</temperature>;obs;ct=202;rt="grp5:sensors/temperature"' // temperature is observable
+        '</temperature>;obs;ct=202;rt="grp5:sensors1"' // temperature is observable
     ].join(','));
     res.end();
 }).handle);
@@ -153,7 +152,7 @@ function buildDeviceRDF(res) {
     writer.addTriple({
         subject: 'grp5:device1',
         predicate: 'pit:hasSensor',
-        object: 'grp5:sensors/temperature'
+        object: 'grp5:sensor1'
     });
     writer.end(function(err, rdf) {
         res.write(rdf);
