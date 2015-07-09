@@ -12,22 +12,28 @@ var argv = require('yargs')
     .argv;
 
 // imports
-var url = require('url'),  // parsing urls-
-    coap = require('coap'),
+var url = require('url'), // parsing urls
+    _ = require('underscore'); // comparing objects
+async = require('async'); // async setup of serial/coap
+coap = require('coap'),
     server = coap.createServer(),
     routes = require('routes'), // for routing requests
     router = new routes(),
     n3 = require('n3'), // for building RDF documents
     CoapHandler = require('./handler').CoapHandler;
 
-// values
-var temperature = 30.0,
-    lastModified = new Date()
-
 // register RDF formats (otherwise packages are lost)
 coap.registerFormat('application/rdf+xml', 201);
 coap.registerFormat('text/turtle', 202);
 coap.registerFormat('text/n3', 203);
+
+// serial port
+var serialport = require("serialport");
+var port = new serialport.SerialPort("/dev/ttyACM0", {
+    parser: serialport.parsers.readline('\r\n\r\n'),
+    baudrate: 9600
+}, false);
+
 
 // RDF prefixes
 var prefixes = {
@@ -35,6 +41,24 @@ var prefixes = {
     'pit': 'http://pit.itm.uni-luebeck.de/',
     'grp5': 'http://grp05.pit.itm.uni-luebeck.de/'
 };
+
+// weather handler
+var EventEmitter = require('events').EventEmitter;
+var Weather = function() {
+    EventEmitter.call(this);
+};
+Weather.prototype = new EventEmitter();
+Weather.prototype.data = null;
+Weather.prototype.lastModified = null;
+Weather.prototype.updateData = function(data) {
+    previousData = this.data;
+    this.data = data;
+    if (data !== null) {
+        this.lastModified = new Date();
+    }
+    this.emit('data', data, this.lastModified);
+};
+var weather = new Weather();
 
 // index route
 router.addRoute('/.well-known/core', new CoapHandler(function(req, res) {
@@ -45,10 +69,12 @@ router.addRoute('/.well-known/core', new CoapHandler(function(req, res) {
         return;
     }
     res.setOption('Content-Format', 'application/link-format'); // as defined in RFC 6690
-    res.write([
-        '</device>;ct=202;rt="grp5:device1"',
-        '</temperature>;obs;ct=202;rt="grp5:sensors1"' // temperature is observable
-    ].join(','));
+    var endpoints = [];
+    endpoints.push('</device>;ct=202;rt="grp5:device1"');
+    if (weather.data !== null) {
+        endpoints.push('</weather>;obs;ct=202'); // temperature is observable
+    }
+    res.write(endpoints.join(','));
     res.end();
 }).handle);
 
@@ -60,31 +86,35 @@ router.addRoute('/device', new CoapHandler(function(req, res) {
 }).handle);
 
 // sensor status updates
-router.addRoute('/temperature', new CoapHandler(function(req, res) {
+router.addRoute('/weather', new CoapHandler(function(req, res) {
     res.setOption('Content-Format', 'text/turtle');
+
     // respond
     if (req.headers['Observe'] !== 0) {
-        buildSensorRDF(res);
-        res.end();
+        if (!buildSensorRDF(res, weather.data, weather.lastModified)) {
+            res.end();
+        }
         return;
     }
-    var update = function() {
-        // randomly set temperature
-        lastModified = new Date();
-        temperature = Math.min(Math.max(temperature + 0.5 - Math.random(), 20), 40);
-        buildSensorRDF(res);
-    };
-    var interval = setInterval(update, 1000);
-    update();
+
+    notify = function(data, lastModified) {
+        buildSensorRDF(res, data, lastModified);
+    }
+
+    // send initial update
+    notify(weather.data, weather.lastModified);
+
+    // send further updates
+    weather.on('data', notify);
 
     res.on('finish', function(err) {
-        clearInterval(interval);
+        weather.removeListener('data', notify);
     });
 }).handle);
 
 server.on('request', function(req, res) {
     var path = url.parse(req.url).pathname;
-    console.log('Handling request for "%s"', path);
+    console.log('CoAP: handling request for "%s"', path);
     var match = router.match(path);
     if (!match) {
         res.code = 404;
@@ -92,39 +122,83 @@ server.on('request', function(req, res) {
         res.end('File not found');
         return;
     }
-    match.fn(req, res);
+    try {
+        match.fn(req, res);
+    } catch (err) {
+        console.log('Error handling "' + path + '": %s', err.message);
+    }
 });
 
-server.listen(argv.p, function() {
-    console.log('CoAP server listening on port ' + argv.p);
-    if (!argv.r) {
-        console.log('No registry specified, skipping registration (use --help)');
-        return;
-    }
+async.parallel([
+        function(callback) {
+            server.listen(argv.p, function() {
+                console.log('CoAP: server listening on port ' + argv.p);
+                callback(null);
+            })
+        },
+        function(callback) {
+            port.on('error', function(error) {
+                console.log('Serial port failed: %s', error.message);
+                callback();
+            });
+            port.on('open', function(error) {
+                if (error) {
+                    console.log(error);
+                    return;
+                }
 
-    var registry = url.parse(argv.r.indexOf('coap://') === 0 ? argv.r : 'coap://' + argv.r)
-    var req = coap.request({
-        hostname: registry.hostname,
-        port: registry.port ? registry.port : 5683,
-        pathname: registry.pathname ? registry.pathname : '/registry',
-        method: 'POST',
-    });
-    console.log('Registering at %s:%d%s', req.url.hostname, req.url.port, req.url.pathname);
+                console.log('Serial port: ready, waiting for data');
 
-    req.on('response', function(res) {
-        res.pipe(process.stdout)
-        res.on('end', function() {
+                weather.once('data', function() {
+                    callback(null);
+                });
+            });
+            port.open();
+        }
+    ],
+    function(err, results) {
+        if (err) {
+            console.log('Setup failed: %s', err.message);
+            process.exit(1);
+        }
+        console.log('Setup complete');
+
+        // register with SSP
+        if (!argv.r) {
+            console.log('SSP: no registry specified, skipping registration (use --help)');
+            return;
+        }
+
+        var registry = url.parse(new String(argv.r).indexOf('coap://') === 0 ? argv.r : 'coap://' + argv.r)
+        var req = coap.request({
+            hostname: registry.hostname,
+            port: registry.port ? registry.port : 5683,
+            pathname: registry.pathname ? registry.pathname : '/registry',
+            method: 'POST',
+        });
+        console.log('SSP: registering at %s:%d%s', req.url.hostname, req.url.port, req.url.pathname);
+
+        req.on('response', function(res) {
+            res.pipe(process.stdout)
+            res.on('end', function() {
+                process.exit(0)
+            })
+        })
+        req.on('error', function(err) {
+            console.log('SSP registration failed: %s', err.message);
             process.exit(0)
         })
-    })
-    req.on('error', function(err) {
-        console.log('error: registration failed');
-        console.log(err);
-        process.exit(0)
+
+        req.end();
     });
 
-    req.end()
-})
+port.on('data', function(data) {
+    try {
+        data = JSON.parse(new String(data));
+        //console.log('Serial port: received %j', data);
+        weather.updateData(data);
+    } catch (err) {}
+});
 
 function buildDeviceRDF(res) {
     var writer = n3.Writer({
@@ -159,7 +233,14 @@ function buildDeviceRDF(res) {
     });
 }
 
-function buildSensorRDF(res) {
+function buildSensorRDF(res, data, lastModified) {
+    if (data === null) {
+        res.code = 404;
+        res.setOption('Content-Format', 'text/plain');
+        res.end('No data available');
+        return true;
+    }
+
     var writer = n3.Writer({
         prefixes: prefixes
     })
@@ -176,7 +257,7 @@ function buildSensorRDF(res) {
     writer.addTriple({
         subject: 'grp5:status1',
         predicate: 'pit:hasValue',
-        object: n3.Util.createLiteral(Math.round(temperature * 10) / 10, 'xsd:string')
+        object: n3.Util.createLiteral(data.temperature, 'xsd:string')
     });
     writer.end(function(err, rdf) {
         res.write(rdf);

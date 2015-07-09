@@ -12,4 +12,3 @@ module.exports.CoapHandler = function(fn) {
 		that.fn(req, res);
 	}
 }
-
