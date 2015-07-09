@@ -32,8 +32,8 @@ coap.registerFormat('text/n3', 203);
 // RDF prefixes
 var prefixes = {
     'xsd': 'http://www.w3.org/2001/XMLSchema#',
-    'pit': 'http://pit.itm.uni-luebeck.de/#',
-    'grp5': 'http://group5.pit.itm.uni-luebeck.de/#'
+    'pit': 'http://pit.itm.uni-luebeck.de/',
+    'grp5': 'http://grp05.pit.itm.uni-luebeck.de/'
 };
 
 // index route
