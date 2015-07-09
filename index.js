@@ -176,7 +176,7 @@ function buildSensorRDF(res) {
     writer.addTriple({
         subject: 'grp5:status1',
         predicate: 'pit:hasValue',
-        object: n3.Util.createLiteral(Math.round(temperature * 10) / 10, 'xsd:float')
+        object: n3.Util.createLiteral(Math.round(temperature * 10) / 10, 'xsd:string')
     });
     writer.end(function(err, rdf) {
         res.write(rdf);
